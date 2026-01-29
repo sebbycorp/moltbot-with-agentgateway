@@ -8,10 +8,7 @@ This guide provides comprehensive instructions for setting up Moltbot with Agent
   - Tested on: Kind, K3s, Talos, EKS, GKE, AKS
 - **kubectl** configured with cluster access
 - **Helm** v3.x installed
-- **API Keys** for at least one LLM provider:
-  - Anthropic (Claude)
-  - OpenAI (GPT)
-  - xAI (Grok)
+- **Anthropic API Key** for Claude
 
 ## Quick Test Environment
 
@@ -79,44 +76,31 @@ kubectl get pods -n agentgateway-system
 kubectl get gatewayclass agentgateway
 ```
 
-## Step 3: Configure API Key Secrets
+## Step 3: Configure Anthropic API Key Secret
 
-Create Kubernetes secrets for your LLM provider API keys:
+Create a Kubernetes secret for your Anthropic API key:
 
 ```bash
-# Option A: All keys in one secret
-kubectl create secret generic llm-api-keys \
-  --namespace agentgateway-system \
-  --from-literal=anthropic-key=$ANTHROPIC_API_KEY \
-  --from-literal=openai-key=$OPENAI_API_KEY \
-  --from-literal=xai-key=$XAI_API_KEY
-
-# Option B: Separate secrets per provider
 kubectl create secret generic anthropic-api-key \
   --namespace agentgateway-system \
   --from-literal=api-key=$ANTHROPIC_API_KEY
-
-kubectl create secret generic openai-api-key \
-  --namespace agentgateway-system \
-  --from-literal=api-key=$OPENAI_API_KEY
-
-kubectl create secret generic xai-api-key \
-  --namespace agentgateway-system \
-  --from-literal=api-key=$XAI_API_KEY
 ```
 
-## Step 4: Deploy Backend Configurations
-
-Apply the LLM backend configurations from this repo:
+Verify:
 
 ```bash
-kubectl apply -f manifests/backends/
+kubectl get secret anthropic-api-key -n agentgateway-system
 ```
 
-This creates `AgentGatewayBackend` resources for:
-- **anthropic-backend** - Routes to `api.anthropic.com`
-- **openai-backend** - Routes to `api.openai.com`
-- **xai-backend** - Routes to `api.x.ai`
+## Step 4: Deploy Backend Configuration
+
+Apply the Anthropic backend configuration from this repo:
+
+```bash
+kubectl apply -f manifests/backends/anthropic-backend.yaml
+```
+
+This creates an `AgentGatewayBackend` resource that routes to `api.anthropic.com`.
 
 Verify:
 
@@ -199,31 +183,13 @@ providers:
   agentgateway-anthropic:
     baseUrl: "http://<GATEWAY_IP>:8080/anthropic"
     apiKey: "passthrough"  # Gateway injects real key
-    
-  # Route OpenAI through AgentGateway
-  agentgateway-openai:
-    baseUrl: "http://<GATEWAY_IP>:8080/openai"
-    apiKey: "passthrough"
-    
-  # Route xAI through AgentGateway  
-  agentgateway-xai:
-    baseUrl: "http://<GATEWAY_IP>:8080/xai"
-    apiKey: "passthrough"
 
-# Map models to gateway providers
+# Map models to gateway provider
 models:
   claude-sonnet-4-20250514:
     provider: agentgateway-anthropic
   claude-opus-4-5:
     provider: agentgateway-anthropic
-  grok-3-mini-beta:
-    provider: agentgateway-xai
-  grok-3-beta:
-    provider: agentgateway-xai
-  gpt-4o:
-    provider: agentgateway-openai
-  gpt-4o-mini:
-    provider: agentgateway-openai
 ```
 
 ### Restart Clawdbot
@@ -316,7 +282,7 @@ helm uninstall agentgateway agentgateway-crds -n agentgateway-system
 kubectl delete namespace agentgateway-system
 
 # Remove Gateway API CRDs (optional)
-kubectl delete -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
+kubectl delete -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/standard-install.yaml
 ```
 
 ### Delete Kind Cluster (if used)

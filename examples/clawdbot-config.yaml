@@ -1,46 +1,22 @@
 # Example Clawdbot/Moltbot configuration for AgentGateway integration
 # Copy relevant sections to ~/.clawdbot/config.yaml
 
-# Provider configurations pointing to AgentGateway
+# Provider configuration pointing to AgentGateway
 providers:
   # Anthropic via AgentGateway
   agentgateway-anthropic:
-    baseUrl: "http://172.16.10.162:30890/anthropic"
-    apiKey: "demo"  # Gateway handles real API keys
-    
-  # xAI/Grok via AgentGateway  
-  agentgateway-xai:
-    baseUrl: "http://172.16.10.162:30890/xai"
-    apiKey: "demo"
+    baseUrl: "http://<GATEWAY_IP>:8080/anthropic"
+    apiKey: "passthrough"  # Gateway handles real API keys
 
-  # OpenAI via AgentGateway
-  agentgateway-openai:
-    baseUrl: "http://172.16.10.162:30890/openai"
-    apiKey: "demo"
-
-# Model aliases mapped to gateway providers
+# Model mappings to gateway provider
 models:
-  # Anthropic models
+  # Anthropic Claude models
   claude-sonnet-4-20250514:
     provider: agentgateway-anthropic
   claude-opus-4-5:
     provider: agentgateway-anthropic
-    
-  # xAI models
-  grok-3-mini-beta:
-    provider: agentgateway-xai
-  grok-3-beta:
-    provider: agentgateway-xai
-    
-  # OpenAI models
-  gpt-4o:
-    provider: agentgateway-openai
-  gpt-4o-mini:
-    provider: agentgateway-openai
 
 # Convenience aliases
 modelAliases:
-  grok: agentgateway-xai/grok-3-mini-beta
-  grok3: agentgateway-xai/grok-3-beta
   claude: agentgateway-anthropic/claude-sonnet-4-20250514
   opus: agentgateway-anthropic/claude-opus-4-5

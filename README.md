@@ -6,7 +6,7 @@
 
 > **Enterprise-grade security for AI agents using AgentGateway as a protective proxy layer**
 
-This repository demonstrates how to secure [Moltbot](https://molt.bot) (an AI-powered personal assistant) by routing all LLM traffic through [AgentGateway](https://github.com/agentgateway/agentgateway) - providing observability, security policies, and multi-provider routing.
+This repository demonstrates how to secure [Moltbot](https://molt.bot) (an AI-powered personal assistant) by routing all LLM traffic through [AgentGateway](https://github.com/agentgateway/agentgateway) - providing observability, security policies, and centralized credential management.
 
 ## 🎯 What This Solves
 
@@ -18,7 +18,6 @@ This repository demonstrates how to secure [Moltbot](https://molt.bot) (an AI-po
 | 🏴‍☠️ Prompt injection attacks | Jailbreak pattern detection |
 | 🔑 Credential leaks in prompts | API key pattern blocking |
 | 📊 No visibility into AI usage | Full observability (metrics, logs, traces) |
-| 🔀 Single provider lock-in | Multi-provider routing with failover |
 
 ## 🏗️ Architecture
 
@@ -40,21 +39,19 @@ This demo runs **AgentGateway inside Kubernetes** (Kind or any cluster) while **
 │  │  └─────────┘  │  │          │  │                 │                   │   │
 │  │       │       │  │          │  │                 ▼                   │   │
 │  │       ▼       │  │          │  │  ┌─────────────────────────────┐   │   │
-│  │   WhatsApp    │  │          │  │  │   Multi-Provider Router     │   │   │
-│  │   Telegram    │  │          │  │  │  /anthropic /openai /xai    │   │   │
+│  │   WhatsApp    │  │          │  │  │      LLM Backend Router     │   │   │
+│  │   Telegram    │  │          │  │  │         /anthropic          │   │   │
 │  │   Discord     │  │          │  │  └─────────────────────────────┘   │   │
 │  └───────────────┘  │          │  │                 │                   │   │
 │                     │          │  └─────────────────┼───────────────────┘   │
 └─────────────────────┘          │                    │                       │
                                  └────────────────────┼───────────────────────┘
                                                       │
-                      ┌───────────────────────────────┼───────────────────────────┐
-                      │                               │                           │
-                      ▼                               ▼                           ▼
-              ┌──────────────┐               ┌──────────────┐             ┌──────────────┐
-              │   Anthropic  │               │    OpenAI    │             │     xAI      │
-              │    Claude    │               │     GPT      │             │    Grok      │
-              └──────────────┘               └──────────────┘             └──────────────┘
+                                                      ▼
+                                              ┌──────────────┐
+                                              │   Anthropic  │
+                                              │    Claude    │
+                                              └──────────────┘
 ```
 
 > **Why this setup?** Moltbot needs access to messaging platforms and handles QR code authentication for WhatsApp. Running it locally keeps things simple while still demonstrating AgentGateway's security features. In production, you could containerize Moltbot, but that's outside the scope of this demo.
@@ -66,7 +63,7 @@ This demo runs **AgentGateway inside Kubernetes** (Kind or any cluster) while **
 - Kubernetes cluster (K8s 1.28+)
 - `kubectl` configured for your cluster
 - `helm` v3.x installed
-- API keys for your LLM providers (Anthropic, OpenAI, xAI)
+- Anthropic API key
 
 > 💡 **Quick testing?** Use [Kind](https://kind.sigs.k8s.io/) to spin up a local cluster:
 > ```bash
@@ -108,25 +105,22 @@ kubectl get pods -n agentgateway-system
 kubectl get gatewayclass agentgateway
 ```
 
-### 3. Configure LLM Provider Secrets
+### 3. Configure Anthropic API Key Secret
 
-Create secrets for your LLM API keys:
+Create a secret for your Anthropic API key:
 
 ```bash
-# Create secrets for API keys
-kubectl create secret generic llm-api-keys \
+kubectl create secret generic anthropic-api-key \
   --namespace agentgateway-system \
-  --from-literal=anthropic-key=$ANTHROPIC_API_KEY \
-  --from-literal=openai-key=$OPENAI_API_KEY \
-  --from-literal=xai-key=$XAI_API_KEY
+  --from-literal=api-key=$ANTHROPIC_API_KEY
 ```
 
-### 4. Deploy Backend Configurations
+### 4. Deploy Backend Configuration
 
-Apply the LLM backend configurations:
+Apply the Anthropic backend configuration:
 
 ```bash
-kubectl apply -f manifests/backends/
+kubectl apply -f manifests/backends/anthropic-backend.yaml
 ```
 
 ### 5. Create the Gateway
@@ -164,22 +158,12 @@ providers:
   agentgateway-anthropic:
     baseUrl: "http://${GATEWAY_IP}:8080/anthropic"
     apiKey: "passthrough"  # Gateway handles real keys
-    
-  agentgateway-openai:
-    baseUrl: "http://${GATEWAY_IP}:8080/openai"
-    apiKey: "passthrough"
-    
-  agentgateway-xai:
-    baseUrl: "http://${GATEWAY_IP}:8080/xai"
-    apiKey: "passthrough"
 
 models:
   claude-sonnet-4-20250514:
     provider: agentgateway-anthropic
-  gpt-4o:
-    provider: agentgateway-openai
-  grok-3-mini-beta:
-    provider: agentgateway-xai
+  claude-opus-4-5:
+    provider: agentgateway-anthropic
 ```
 
 ### 8. Test the Setup
@@ -233,7 +217,7 @@ spec:
   targetRefs:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
-      name: llm-routes
+      name: anthropic-route
   default:
     promptGuard:
       request:
@@ -261,7 +245,7 @@ Prevents accidental API key exposure:
 
 | Pattern | Example |
 |---------|---------|
-| OpenAI | `sk-...` |
+| Anthropic | `sk-ant-...` |
 | GitHub | `ghp_...`, `gho_...` |
 | Slack | `xoxb-...`, `xoxp-...` |
 | AWS | `AKIA...` |
@@ -302,7 +286,7 @@ Automatically enrich prompts with security context:
 AgentGateway provides full visibility into AI traffic:
 
 ### Metrics (Prometheus)
-- Request count by provider/model
+- Request count by model
 - Token usage (input/output)
 - Latency percentiles
 - Error rates
@@ -334,9 +318,7 @@ moltbot-with-agentgateway/
 │       └── prompt-elicitation.png
 ├── manifests/
 │   ├── backends/
-│   │   ├── anthropic-backend.yaml
-│   │   ├── openai-backend.yaml
-│   │   └── xai-backend.yaml
+│   │   └── anthropic-backend.yaml
 │   ├── gateway/
 │   │   ├── gateway.yaml
 │   │   └── httproute.yaml
@@ -345,8 +327,7 @@ moltbot-with-agentgateway/
 │       ├── 02-pii-protection.yaml
 │       ├── 03-jailbreak-prevention.yaml
 │       ├── 04-credential-protection.yaml
-│       ├── 05-prompt-elicitation.yaml
-│       └── 06-observability.yaml
+│       └── 05-prompt-elicitation.yaml
 ├── scripts/
 │   └── demo.sh                     # Interactive demo
 └── examples/
@@ -362,7 +343,7 @@ Run the interactive demo to see all security features in action:
 ```
 
 The demo showcases:
-1. Multi-provider routing
+1. Anthropic Claude routing through AgentGateway
 2. PII blocking in real-time
 3. Jailbreak prevention
 4. Credential leak protection
