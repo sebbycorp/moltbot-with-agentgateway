@@ -34,7 +34,7 @@ kubectl cluster-info
 AgentGateway uses the [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io/). Install the standard CRDs:
 
 ```bash
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/standard-install.yaml
 ```
 
 Verify installation:
@@ -55,18 +55,17 @@ AgentGateway is distributed via OCI Helm charts from the [kgateway](https://gith
 ### Install CRDs
 
 ```bash
-helm upgrade -i agentgateway-crds oci://ghcr.io/kgateway-dev/charts/agentgateway-crds \
-  --create-namespace \
+helm upgrade -i --create-namespace \
   --namespace agentgateway-system \
-  --version v2.2.0-main
+  --version v2.2.0-main agentgateway-crds oci://ghcr.io/kgateway-dev/charts/agentgateway-crds
 ```
 
 ### Install Control Plane
 
 ```bash
-helm upgrade -i agentgateway oci://ghcr.io/kgateway-dev/charts/agentgateway \
-  --namespace agentgateway-system \
+helm upgrade -i -n agentgateway-system agentgateway oci://ghcr.io/kgateway-dev/charts/agentgateway \
   --version v2.2.0-main \
+  --set controller.image.pullPolicy=Always \
   --set controller.extraEnv.KGW_ENABLE_GATEWAY_API_EXPERIMENTAL_FEATURES=true
 ```
 
@@ -76,15 +75,8 @@ helm upgrade -i agentgateway oci://ghcr.io/kgateway-dev/charts/agentgateway \
 # Check control plane pod
 kubectl get pods -n agentgateway-system
 
-# Expected output:
-# NAME                            READY   STATUS    RESTARTS   AGE
-# agentgateway-xxxxxxxxx-xxxxx    1/1     Running   0          1m
-
-# Check CRDs were installed
-kubectl get crd | grep agentgateway
-# Expected:
-# agentgatewaybackends.gateway.agentgateway.io
-# agentgatewaypolicies.gateway.agentgateway.io
+# Check GatewayClass was created
+kubectl get gatewayclass agentgateway
 ```
 
 ## Step 3: Configure API Key Secrets

@@ -75,24 +75,23 @@ This repository demonstrates how to secure [Moltbot](https://molt.bot) (an AI-po
 AgentGateway uses the Kubernetes Gateway API. Install the CRDs first:
 
 ```bash
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/standard-install.yaml
 ```
 
 ### 2. Install AgentGateway
 
-AgentGateway is distributed via OCI helm charts from the kgateway project:
+AgentGateway is distributed via OCI Helm charts from the [kgateway](https://github.com/kgateway-dev/kgateway) project:
 
 ```bash
 # Install AgentGateway CRDs
-helm upgrade -i agentgateway-crds oci://ghcr.io/kgateway-dev/charts/agentgateway-crds \
-  --create-namespace \
+helm upgrade -i --create-namespace \
   --namespace agentgateway-system \
-  --version v2.2.0-main
+  --version v2.2.0-main agentgateway-crds oci://ghcr.io/kgateway-dev/charts/agentgateway-crds
 
 # Install AgentGateway control plane
-helm upgrade -i agentgateway oci://ghcr.io/kgateway-dev/charts/agentgateway \
-  --namespace agentgateway-system \
+helm upgrade -i -n agentgateway-system agentgateway oci://ghcr.io/kgateway-dev/charts/agentgateway \
   --version v2.2.0-main \
+  --set controller.image.pullPolicy=Always \
   --set controller.extraEnv.KGW_ENABLE_GATEWAY_API_EXPERIMENTAL_FEATURES=true
 ```
 
@@ -102,9 +101,8 @@ Verify the installation:
 # Check control plane is running
 kubectl get pods -n agentgateway-system
 
-# Expected output:
-# NAME                            READY   STATUS    RESTARTS   AGE
-# agentgateway-xxxxxxxxx-xxxxx    1/1     Running   0          1m
+# Check GatewayClass was created
+kubectl get gatewayclass agentgateway
 ```
 
 ### 3. Configure LLM Provider Secrets
