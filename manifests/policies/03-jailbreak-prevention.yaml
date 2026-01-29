@@ -1,0 +1,92 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# 🛡️ Prompt Injection / Jailbreak Prevention Policies
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Protects against common prompt injection attacks:
+#   - "Ignore previous instructions" attacks
+#   - "DAN mode" / "Do Anything Now" jailbreaks
+#   - Role manipulation attempts
+#
+# Action: REJECT - Blocks requests matching attack patterns
+#
+---
+# Block "Ignore Instructions" Attacks
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 07-block-jailbreak-ignore-instructions
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: prompt-injection
+  annotations:
+    description: "Blocks 'ignore previous instructions' style attacks"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      promptGuard:
+        request:
+        - regex:
+            action: Reject
+            matches:
+            - "(?i)(ignore previous|disregard all|ignore all previous instructions)"
+          response:
+            message: "🛡️ Blocked: Prompt injection attempt detected"
+---
+# Block "DAN Mode" Jailbreaks
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 08-block-jailbreak-dan-mode
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: prompt-injection
+  annotations:
+    description: "Blocks DAN (Do Anything Now) jailbreak attempts"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      promptGuard:
+        request:
+        - regex:
+            action: Reject
+            matches:
+            - "(?i)(DAN|do anything now|developer mode|you have no restrictions)"
+          response:
+            message: "🛡️ Blocked: DAN mode jailbreak attempt detected"
+---
+# Block Role Manipulation Attacks
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 09-block-jailbreak-role-manipulation
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: prompt-injection
+  annotations:
+    description: "Blocks role manipulation attempts"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      promptGuard:
+        request:
+        - regex:
+            action: Reject
+            matches:
+            - "(?i)(you are now|pretend you are|act as if|roleplay as)"
+          response:
+            message: "🛡️ Blocked: Role manipulation attempt detected"

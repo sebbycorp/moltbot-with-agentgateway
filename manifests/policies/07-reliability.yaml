@@ -1,0 +1,59 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ⚙️ Reliability & Access Control Policies
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Includes:
+#   - Request timeouts (prevent hung connections)
+#   - CORS configuration (browser/web app access)
+#
+---
+# Request Timeout - 120 seconds max
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 15-request-timeout-120s
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: reliability
+  annotations:
+    description: "Sets maximum request timeout to 120 seconds"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  traffic:
+    timeouts:
+      request: 120s
+---
+# CORS - Enable Browser Access
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 16-cors-browser-access
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: access-control
+  annotations:
+    description: "Enables CORS for browser/web application access"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  traffic:
+    cors:
+      allowOrigins:
+      - "*"
+      allowMethods:
+      - GET
+      - POST
+      - OPTIONS
+      allowHeaders:
+      - content-type
+      - authorization
+      - x-api-key
+      - anthropic-version
+      maxAge: 86400

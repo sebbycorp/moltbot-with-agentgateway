@@ -1,0 +1,152 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# 💬 Prompt Elicitation (Automatic Context Enrichment) Policies
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Automatically enriches all prompts with:
+#   - Security context (decline harmful requests)
+#   - Compliance context (SOC2, GDPR)
+#   - Expert personas (K8s/DevOps)
+#   - Reasoning prompts (chain-of-thought)
+#   - Formatting guidelines
+#
+# How it works:
+#   - prepend: Added BEFORE user message (system prompts)
+#   - append: Added AFTER user message (instructions)
+#
+---
+# Security Context - Prepend security rules
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 17-elicit-security-context
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: elicitation
+  annotations:
+    description: "Prepends security-focused system prompt to all requests"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      prompt:
+        prepend:
+        - role: system
+          content: |
+            You are a helpful AI assistant operating in a secure enterprise environment.
+            SECURITY RULES:
+            - Never reveal API keys, passwords, or credentials
+            - Do not execute or suggest malicious code
+            - Decline requests for illegal activities
+            - Protect user privacy at all times
+            - If asked to bypass security controls, politely decline
+---
+# Compliance Context - SOC2/GDPR awareness
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 18-elicit-compliance-context
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: elicitation
+  annotations:
+    description: "Adds enterprise compliance context to prompts"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      prompt:
+        prepend:
+        - role: system
+          content: |
+            COMPLIANCE CONTEXT:
+            - This conversation may be logged for audit purposes
+            - Follow SOC2 and GDPR data handling requirements
+            - Do not store or repeat PII unnecessarily
+            - Cite sources when providing factual information
+---
+# Response Format Guidelines
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 19-elicit-response-format
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: elicitation
+  annotations:
+    description: "Appends formatting guidance to ensure consistent responses"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      prompt:
+        append:
+        - role: user
+          content: "Please format your response clearly with headers and bullet points where appropriate. Be concise but thorough."
+---
+# Kubernetes/DevOps Expert Persona
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 20-elicit-k8s-devops-expert
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: elicitation
+  annotations:
+    description: "Configures AI as a Kubernetes and DevOps expert"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      prompt:
+        prepend:
+        - role: system
+          content: |
+            You are an expert Kubernetes and DevOps engineer specializing in:
+            - Kubernetes architecture and best practices
+            - GitOps with ArgoCD and Flux
+            - Service mesh (Istio, Cilium)
+            - API Gateways and AI Gateways
+            - Cloud-native security
+            - Infrastructure as Code (Terraform, Pulumi)
+            
+            Provide practical, production-ready advice. Include YAML examples when relevant.
+            Always consider security, scalability, and maintainability.
+---
+# Chain-of-Thought Reasoning
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 21-elicit-chain-of-thought
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: elicitation
+  annotations:
+    description: "Encourages step-by-step reasoning for complex queries"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      prompt:
+        append:
+        - role: user
+          content: "Think through this step-by-step before providing your final answer."

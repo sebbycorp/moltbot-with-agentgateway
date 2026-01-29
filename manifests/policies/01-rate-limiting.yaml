@@ -1,0 +1,54 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ⏱️ Rate Limiting Policies
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Protects against:
+#   - API abuse from automated scripts
+#   - Runaway token consumption
+#   - Cost overruns from excessive usage
+#
+---
+# Request Rate Limiting - 10 requests per minute with burst of 5
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 01-request-rate-limiter-10rpm
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: rate-limiting
+  annotations:
+    description: "Limits requests to 10 per minute with burst of 5"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  traffic:
+    rateLimit:
+      local:
+      - requests: 10
+        unit: Minutes
+        burst: 5
+---
+# Token Usage Limiter - 50,000 tokens per hour
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 02-token-limiter-50k-per-hour
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: rate-limiting
+  annotations:
+    description: "Limits LLM token usage to 50,000 tokens per hour"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  traffic:
+    rateLimit:
+      local:
+      - tokens: 50000
+        unit: Hours

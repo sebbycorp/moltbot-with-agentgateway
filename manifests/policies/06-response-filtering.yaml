@@ -1,0 +1,58 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# 📤 Response Filtering Policies
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Filters sensitive data from LLM responses:
+#   - Masks SSN patterns in responses
+#   - Masks credit card numbers in responses
+#
+# Action: MASK - Replaces sensitive data with asterisks
+#
+---
+# Mask SSN in Responses
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 13-mask-ssn-in-responses
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: response-filtering
+  annotations:
+    description: "Masks Social Security Numbers in LLM responses"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      promptGuard:
+        response:
+        - regex:
+            builtins:
+            - Ssn
+---
+# Mask Credit Cards in Responses
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 14-mask-credit-cards-in-responses
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: response-filtering
+  annotations:
+    description: "Masks credit card numbers in LLM responses"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      promptGuard:
+        response:
+        - regex:
+            builtins:
+            - CreditCard

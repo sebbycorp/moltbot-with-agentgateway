@@ -1,0 +1,92 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# 🚀 Multi-LLM Gateway - Unified AI Provider Routing
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# This creates a gateway that routes to multiple AI providers:
+#   /anthropic → Claude (Anthropic)
+#   /openai    → GPT (OpenAI)
+#   /xai       → Grok (xAI)
+#   /grok      → Grok (alias)
+#
+# Prerequisites:
+#   - AgentGateway controller installed
+#   - AgentgatewayBackends configured for: anthropic, openai, xai
+#
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: multi-llm-gateway
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+  annotations:
+    description: "Multi-provider AI gateway for Anthropic, OpenAI, and xAI"
+spec:
+  gatewayClassName: enterprise-agentgateway
+  listeners:
+  - name: http
+    port: 8090
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
+---
+# Combined HTTPRoute for all AI providers
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: multi-llm-route
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+  annotations:
+    description: "Routes requests to Anthropic, OpenAI, and xAI backends"
+spec:
+  parentRefs:
+  - name: multi-llm-gateway
+    namespace: agentgateway-system
+  rules:
+  # 🟣 Anthropic (Claude) path
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /anthropic
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: anthropic
+      namespace: agentgateway-system
+  # 🟢 OpenAI (GPT) path
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /openai
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: openai
+      namespace: agentgateway-system
+  # ⚡ xAI (Grok) path
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /xai
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: xai
+      namespace: agentgateway-system
+  # ⚡ Grok alias path
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /grok
+    backendRefs:
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
+      name: xai
+      namespace: agentgateway-system
+---
+# Patch service to NodePort for easy access (optional)
+# Run: kubectl patch svc multi-llm-gateway -n agentgateway-system -p '{"spec": {"type": "NodePort", "ports": [{"port": 8090, "targetPort": 8090, "nodePort": 30890}]}}'

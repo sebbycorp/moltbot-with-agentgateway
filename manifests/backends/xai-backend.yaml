@@ -1,0 +1,16 @@
+apiVersion: gateway.agentgateway.io/v1
+kind: LLMBackend
+metadata:
+  name: xai-backend
+  namespace: agentgateway-system
+spec:
+  type: xai
+  endpoint: "https://api.x.ai"
+  auth:
+    secretRef:
+      name: xai-api-key
+      key: api-key
+  models:
+    - grok-3-beta
+    - grok-3-mini-beta
+    - grok-2

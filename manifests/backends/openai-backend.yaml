@@ -1,0 +1,17 @@
+apiVersion: gateway.agentgateway.io/v1
+kind: LLMBackend
+metadata:
+  name: openai-backend
+  namespace: agentgateway-system
+spec:
+  type: openai
+  endpoint: "https://api.openai.com"
+  auth:
+    secretRef:
+      name: openai-api-key
+      key: api-key
+  models:
+    - gpt-4o
+    - gpt-4o-mini
+    - gpt-4-turbo
+    - gpt-3.5-turbo

@@ -1,0 +1,17 @@
+apiVersion: gateway.agentgateway.io/v1
+kind: LLMBackend
+metadata:
+  name: anthropic-backend
+  namespace: agentgateway-system
+spec:
+  type: anthropic
+  endpoint: "https://api.anthropic.com"
+  auth:
+    secretRef:
+      name: anthropic-api-key
+      key: api-key
+  models:
+    - claude-sonnet-4-20250514
+    - claude-opus-4-5
+    - claude-3-5-sonnet-20241022
+    - claude-3-haiku-20240307

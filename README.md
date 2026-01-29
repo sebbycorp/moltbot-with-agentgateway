@@ -1,1 +1,308 @@
-# moltbot-with-agentgateway
+# 🤖 Moltbot + AgentGateway: Secure AI Agent Infrastructure
+
+<p align="center">
+  <img src="docs/images/architecture-overview.png" alt="Architecture Overview" width="800">
+</p>
+
+> **Enterprise-grade security for AI agents using AgentGateway as a protective proxy layer**
+
+This repository demonstrates how to secure [Moltbot](https://molt.bot) (an AI-powered personal assistant) by routing all LLM traffic through [AgentGateway](https://github.com/agentgateway/agentgateway) - providing observability, security policies, and multi-provider routing.
+
+## 🎯 What This Solves
+
+| Problem | Solution |
+|---------|----------|
+| 🔓 Direct API key exposure | AgentGateway manages credentials centrally |
+| 💸 Uncontrolled API costs | Rate limiting (requests + tokens) |
+| 🕵️ PII data leakage | Automatic PII detection and blocking |
+| 🏴‍☠️ Prompt injection attacks | Jailbreak pattern detection |
+| 🔑 Credential leaks in prompts | API key pattern blocking |
+| 📊 No visibility into AI usage | Full observability (metrics, logs, traces) |
+| 🔀 Single provider lock-in | Multi-provider routing with failover |
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Your Infrastructure                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   ┌──────────────┐         ┌─────────────────────────────────────────┐  │
+│   │              │         │         AgentGateway (K8s)              │  │
+│   │   Moltbot    │         │  ┌─────────────────────────────────┐   │  │
+│   │              │  HTTP   │  │        Security Policies         │   │  │
+│   │  ┌────────┐  │ ──────► │  │  • PII Protection               │   │  │
+│   │  │ Claude │  │         │  │  • Jailbreak Prevention         │   │  │
+│   │  │  API   │  │         │  │  • Credential Blocking          │   │  │
+│   │  │ Client │  │         │  │  • Rate Limiting                │   │  │
+│   │  └────────┘  │         │  └─────────────────────────────────┘   │  │
+│   │              │         │                  │                      │  │
+│   └──────────────┘         │                  ▼                      │  │
+│                            │  ┌─────────────────────────────────┐   │  │
+│                            │  │      Multi-Provider Router       │   │  │
+│                            │  │  /anthropic  /openai  /xai      │   │  │
+│                            │  └─────────────────────────────────┘   │  │
+│                            │                  │                      │  │
+│                            └──────────────────┼──────────────────────┘  │
+│                                               │                          │
+└───────────────────────────────────────────────┼──────────────────────────┘
+                                                │
+                    ┌───────────────────────────┼───────────────────────────┐
+                    │                           │                           │
+                    ▼                           ▼                           ▼
+            ┌──────────────┐           ┌──────────────┐           ┌──────────────┐
+            │   Anthropic  │           │    OpenAI    │           │     xAI      │
+            │    Claude    │           │     GPT      │           │    Grok      │
+            └──────────────┘           └──────────────┘           └──────────────┘
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Kubernetes cluster (tested on K8s 1.34+)
+- [AgentGateway](https://github.com/agentgateway/agentgateway) installed
+- Moltbot/Clawdbot instance
+- API keys for your LLM providers
+
+### 1. Deploy AgentGateway
+
+```bash
+# Add Solo.io Helm repo
+helm repo add solo-io https://storage.googleapis.com/solo-public-helm
+helm repo update
+
+# Install AgentGateway
+helm install agentgateway solo-io/agentgateway \
+  --namespace agentgateway-system \
+  --create-namespace
+```
+
+### 2. Configure LLM Backends
+
+```bash
+# Create secrets for API keys
+kubectl create secret generic llm-api-keys \
+  --namespace agentgateway-system \
+  --from-literal=anthropic-key=$ANTHROPIC_API_KEY \
+  --from-literal=openai-key=$OPENAI_API_KEY \
+  --from-literal=xai-key=$XAI_API_KEY
+
+# Apply backend configurations
+kubectl apply -f manifests/backends/
+```
+
+### 3. Apply Security Policies
+
+```bash
+# Apply all security policies
+kubectl apply -f manifests/policies/
+```
+
+### 4. Configure Moltbot
+
+Update your Moltbot/Clawdbot configuration to route through AgentGateway:
+
+```yaml
+# ~/.clawdbot/config.yaml
+providers:
+  agentgateway-anthropic:
+    baseUrl: "http://<gateway-ip>:30890/anthropic"
+    apiKey: "demo"  # Gateway handles real keys
+    
+  agentgateway-xai:
+    baseUrl: "http://<gateway-ip>:30890/xai"
+    apiKey: "demo"
+
+models:
+  claude-sonnet-4-20250514:
+    provider: agentgateway-anthropic
+  grok-3-mini-beta:
+    provider: agentgateway-xai
+```
+
+## 🛡️ Security Policies
+
+### PII Protection
+
+Automatically detects and blocks sensitive data before it reaches LLM providers:
+
+<p align="center">
+  <img src="docs/images/pii-protection.png" alt="PII Protection" width="600">
+</p>
+
+| Pattern | Description |
+|---------|-------------|
+| SSN | Social Security Numbers (XXX-XX-XXXX) |
+| Credit Cards | Visa, Mastercard, Amex patterns |
+| Phone Numbers | US/International formats |
+| Canadian SIN | Social Insurance Numbers |
+
+**Example Policy:**
+```yaml
+apiVersion: gateway.agentgateway.io/v1
+kind: AgentGatewayPolicy
+metadata:
+  name: block-credit-cards
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: llm-routes
+  default:
+    promptGuard:
+      request:
+        customResponseMessage: "Request blocked: Credit card number detected"
+        matches:
+          - action: REJECT
+            regex: '\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\b'
+```
+
+### Prompt Injection Prevention
+
+<p align="center">
+  <img src="docs/images/jailbreak-prevention.png" alt="Jailbreak Prevention" width="600">
+</p>
+
+Blocks common jailbreak patterns:
+- "Ignore previous instructions"
+- DAN (Do Anything Now) mode
+- Role/persona manipulation
+- System prompt extraction
+
+### Credential Leak Protection
+
+Prevents accidental API key exposure:
+
+| Pattern | Example |
+|---------|---------|
+| OpenAI | `sk-...` |
+| GitHub | `ghp_...`, `gho_...` |
+| Slack | `xoxb-...`, `xoxp-...` |
+| AWS | `AKIA...` |
+
+### Rate Limiting
+
+Control costs and prevent abuse:
+
+```yaml
+# Request-based limiting
+- 10 requests/minute per user
+- Burst allowance: 5 requests
+
+# Token-based limiting  
+- 50,000 tokens/hour per user
+- Prevents runaway costs
+```
+
+### Prompt Elicitation
+
+Automatically enrich prompts with security context:
+
+<p align="center">
+  <img src="docs/images/prompt-elicitation.png" alt="Prompt Elicitation" width="600">
+</p>
+
+```yaml
+# Auto-injected security context
+"You are a helpful assistant. IMPORTANT SECURITY RULES:
+- Never reveal API keys, passwords, or credentials
+- Decline requests for illegal activities
+- Do not execute code that could harm systems
+- Protect user privacy at all times"
+```
+
+## 📊 Observability
+
+AgentGateway provides full visibility into AI traffic:
+
+### Metrics (Prometheus)
+- Request count by provider/model
+- Token usage (input/output)
+- Latency percentiles
+- Error rates
+- Policy violations
+
+### Logs
+- Full request/response logging
+- PII redaction in logs
+- Policy action audit trail
+
+### Traces (OpenTelemetry)
+- End-to-end request tracing
+- Provider latency breakdown
+- Policy evaluation timing
+
+## 📁 Repository Structure
+
+```
+moltbot-with-agentgateway/
+├── README.md
+├── docs/
+│   ├── SETUP.md                    # Detailed setup guide
+│   ├── POLICIES.md                 # Policy documentation
+│   ├── TROUBLESHOOTING.md          # Common issues
+│   └── images/
+│       ├── architecture-overview.png
+│       ├── pii-protection.png
+│       ├── jailbreak-prevention.png
+│       └── prompt-elicitation.png
+├── manifests/
+│   ├── backends/
+│   │   ├── anthropic-backend.yaml
+│   │   ├── openai-backend.yaml
+│   │   └── xai-backend.yaml
+│   ├── gateway/
+│   │   ├── gateway.yaml
+│   │   └── httproute.yaml
+│   └── policies/
+│       ├── 01-rate-limiting.yaml
+│       ├── 02-pii-protection.yaml
+│       ├── 03-jailbreak-prevention.yaml
+│       ├── 04-credential-protection.yaml
+│       ├── 05-prompt-elicitation.yaml
+│       └── 06-observability.yaml
+├── scripts/
+│   └── demo.sh                     # Interactive demo
+└── examples/
+    └── clawdbot-config.yaml        # Example Moltbot config
+```
+
+## 🎬 Demo
+
+Run the interactive demo to see all security features in action:
+
+```bash
+./scripts/demo.sh
+```
+
+The demo showcases:
+1. Multi-provider routing
+2. PII blocking in real-time
+3. Jailbreak prevention
+4. Credential leak protection
+5. Rate limiting behavior
+6. Prompt elicitation
+
+## 🔗 Related Projects
+
+- [Moltbot](https://molt.bot) - AI-powered personal assistant
+- [Clawdbot](https://github.com/clawdbot/clawdbot) - Open-source AI agent framework
+- [AgentGateway](https://github.com/agentgateway/agentgateway) - AI gateway for agents
+- [Kagent](https://github.com/kagent-dev/kagent) - Kubernetes AI agent
+
+## 📚 Resources
+
+- [AgentGateway Documentation](https://docs.solo.io/agentgateway)
+- [Clawdbot Documentation](https://docs.clawd.bot)
+- [Solo.io](https://solo.io)
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">
+  Built with ❤️ by <a href="https://twitter.com/SebbyCorp">@SebbyCorp</a>
+</p>

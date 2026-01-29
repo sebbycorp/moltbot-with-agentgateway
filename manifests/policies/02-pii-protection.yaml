@@ -1,0 +1,120 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# 🔐 PII Data Protection Policies
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Protects against sensitive data leakage:
+#   - Social Security Numbers (SSN)
+#   - Credit Card Numbers
+#   - Phone Numbers
+#   - Canadian Social Insurance Numbers (SIN)
+#
+# Action: REJECT - Blocks requests containing PII
+#
+---
+# Block Social Security Numbers
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 03-block-ssn-numbers
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: pii-protection
+  annotations:
+    description: "Blocks Social Security Numbers in prompts"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      promptGuard:
+        request:
+        - regex:
+            action: Reject
+            builtins:
+            - Ssn
+          response:
+            message: "🚫 Blocked: Social Security Number detected"
+---
+# Block Credit Card Numbers
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 04-block-credit-cards
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: pii-protection
+  annotations:
+    description: "Blocks credit card numbers in prompts"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      promptGuard:
+        request:
+        - regex:
+            action: Reject
+            builtins:
+            - CreditCard
+          response:
+            message: "🚫 Blocked: Credit card number detected"
+---
+# Block Phone Numbers
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 05-block-phone-numbers
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: pii-protection
+  annotations:
+    description: "Blocks phone numbers in prompts"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      promptGuard:
+        request:
+        - regex:
+            action: Reject
+            builtins:
+            - PhoneNumber
+          response:
+            message: "🚫 Blocked: Phone number detected"
+---
+# Block Canadian Social Insurance Numbers
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: 06-block-canadian-sin
+  namespace: agentgateway-system
+  labels:
+    demo: agentgateway
+    category: pii-protection
+  annotations:
+    description: "Blocks Canadian Social Insurance Numbers in prompts"
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: multi-llm-route
+  backend:
+    ai:
+      promptGuard:
+        request:
+        - regex:
+            action: Reject
+            builtins:
+            - CaSin
+          response:
+            message: "🚫 Blocked: Canadian SIN detected"
