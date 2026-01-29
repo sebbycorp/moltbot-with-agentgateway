@@ -1,11 +1,11 @@
-# 🔧 Setup Guide
+# 🔧 Detailed Setup Guide
 
-This guide walks through setting up Moltbot with AgentGateway step-by-step.
+This guide provides comprehensive instructions for setting up Moltbot with AgentGateway on Kubernetes.
 
 ## Prerequisites
 
 - **Kubernetes cluster** (v1.28+)
-  - Tested on: Talos Linux, K3s, EKS, GKE, AKS
+  - Tested on: Kind, K3s, Talos, EKS, GKE, AKS
 - **kubectl** configured with cluster access
 - **Helm** v3.x installed
 - **API Keys** for at least one LLM provider:
@@ -13,47 +13,93 @@ This guide walks through setting up Moltbot with AgentGateway step-by-step.
   - OpenAI (GPT)
   - xAI (Grok)
 
-## Step 1: Install AgentGateway
+## Quick Test Environment
 
-### Option A: Helm (Recommended)
+For local testing, use [Kind](https://kind.sigs.k8s.io/):
 
 ```bash
-# Add Solo.io Helm repository
-helm repo add solo-io https://storage.googleapis.com/solo-public-helm
-helm repo update
+# Install Kind (if needed)
+# macOS: brew install kind
+# Linux: curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64 && chmod +x ./kind && sudo mv ./kind /usr/local/bin/
 
-# Create namespace
-kubectl create namespace agentgateway-system
+# Create cluster
+kind create cluster --name agentgateway-demo
 
-# Install AgentGateway
-helm install agentgateway solo-io/agentgateway \
-  --namespace agentgateway-system \
-  --set gateway.service.type=NodePort \
-  --set gateway.service.nodePort=30890
+# Verify
+kubectl cluster-info
 ```
 
-### Option B: Manual Manifests
+## Step 1: Install Gateway API CRDs
+
+AgentGateway uses the [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io/). Install the standard CRDs:
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/agentgateway/agentgateway/main/deploy/agentgateway.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
+```
+
+Verify installation:
+
+```bash
+kubectl get crd | grep gateway
+# Expected:
+# gatewayclasses.gateway.networking.k8s.io
+# gateways.gateway.networking.k8s.io
+# httproutes.gateway.networking.k8s.io
+# ...
+```
+
+## Step 2: Install AgentGateway
+
+AgentGateway is distributed via OCI Helm charts from the [kgateway](https://github.com/kgateway-dev/kgateway) project.
+
+### Install CRDs
+
+```bash
+helm upgrade -i agentgateway-crds oci://ghcr.io/kgateway-dev/charts/agentgateway-crds \
+  --create-namespace \
+  --namespace agentgateway-system \
+  --version v2.2.0-main
+```
+
+### Install Control Plane
+
+```bash
+helm upgrade -i agentgateway oci://ghcr.io/kgateway-dev/charts/agentgateway \
+  --namespace agentgateway-system \
+  --version v2.2.0-main \
+  --set controller.extraEnv.KGW_ENABLE_GATEWAY_API_EXPERIMENTAL_FEATURES=true
 ```
 
 ### Verify Installation
 
 ```bash
+# Check control plane pod
 kubectl get pods -n agentgateway-system
-# Expected: agentgateway-xxx Running
 
-kubectl get svc -n agentgateway-system
-# Expected: agentgateway service with NodePort/LoadBalancer
+# Expected output:
+# NAME                            READY   STATUS    RESTARTS   AGE
+# agentgateway-xxxxxxxxx-xxxxx    1/1     Running   0          1m
+
+# Check CRDs were installed
+kubectl get crd | grep agentgateway
+# Expected:
+# agentgatewaybackends.gateway.agentgateway.io
+# agentgatewaypolicies.gateway.agentgateway.io
 ```
 
-## Step 2: Configure API Key Secrets
+## Step 3: Configure API Key Secrets
 
 Create Kubernetes secrets for your LLM provider API keys:
 
 ```bash
-# Create secrets (replace with your actual keys)
+# Option A: All keys in one secret
+kubectl create secret generic llm-api-keys \
+  --namespace agentgateway-system \
+  --from-literal=anthropic-key=$ANTHROPIC_API_KEY \
+  --from-literal=openai-key=$OPENAI_API_KEY \
+  --from-literal=xai-key=$XAI_API_KEY
+
+# Option B: Separate secrets per provider
 kubectl create secret generic anthropic-api-key \
   --namespace agentgateway-system \
   --from-literal=api-key=$ANTHROPIC_API_KEY
@@ -67,44 +113,67 @@ kubectl create secret generic xai-api-key \
   --from-literal=api-key=$XAI_API_KEY
 ```
 
-## Step 3: Deploy Backend Configurations
+## Step 4: Deploy Backend Configurations
 
-Apply the LLM backend configurations:
+Apply the LLM backend configurations from this repo:
 
 ```bash
 kubectl apply -f manifests/backends/
 ```
 
-This creates:
-- `anthropic-backend` - Routes to Anthropic Claude API
-- `openai-backend` - Routes to OpenAI API  
-- `xai-backend` - Routes to xAI Grok API
+This creates `AgentGatewayBackend` resources for:
+- **anthropic-backend** - Routes to `api.anthropic.com`
+- **openai-backend** - Routes to `api.openai.com`
+- **xai-backend** - Routes to `api.x.ai`
 
-## Step 4: Deploy Gateway and Routes
+Verify:
+
+```bash
+kubectl get agentgatewaybackend -n agentgateway-system
+```
+
+## Step 5: Deploy Gateway and Routes
+
+Create the Gateway resource to spawn an agentgateway proxy:
 
 ```bash
 kubectl apply -f manifests/gateway/
 ```
 
-This creates:
-- `Gateway` resource exposing the service
-- `HTTPRoute` with paths `/anthropic`, `/openai`, `/xai`, `/grok`
-
-### Verify Gateway
+### Wait for Gateway to be Ready
 
 ```bash
-# Get gateway IP/hostname
-kubectl get gateway -n agentgateway-system
+# Check gateway status (may take 1-2 minutes)
+kubectl get gateway -n agentgateway-system -w
 
-# Test connectivity
-curl http://<gateway-ip>:30890/anthropic/v1/messages \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: test" \
-  -H "anthropic-version: 2023-06-01" \
-  -d '{"model":"claude-sonnet-4-20250514","max_tokens":10,"messages":[{"role":"user","content":"Hi"}]}'
+# Once ADDRESS is assigned:
+# NAME           CLASS          ADDRESS        PROGRAMMED   AGE
+# agentgateway   agentgateway   10.96.x.x      True         2m
 ```
 
-## Step 5: Apply Security Policies
+### Get External IP
+
+```bash
+# For LoadBalancer service
+export GATEWAY_IP=$(kubectl get gateway agentgateway -n agentgateway-system \
+  -o jsonpath='{.status.addresses[0].value}')
+
+# For NodePort (Kind/local)
+export GATEWAY_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+export GATEWAY_PORT=$(kubectl get svc -n agentgateway-system agentgateway-proxy \
+  -o jsonpath='{.spec.ports[0].nodePort}')
+
+echo "Gateway: http://$GATEWAY_IP:${GATEWAY_PORT:-8080}"
+```
+
+### Test Connectivity
+
+```bash
+# Simple health check
+curl -s "http://$GATEWAY_IP:8080/healthz" && echo "Gateway is healthy!"
+```
+
+## Step 6: Apply Security Policies
 
 Apply all security policies:
 
@@ -115,19 +184,20 @@ kubectl apply -f manifests/policies/
 ### Verify Policies
 
 ```bash
-kubectl get agentgatewaypolicies -n agentgateway-system
+kubectl get agentgatewaypolicy -n agentgateway-system
 
 # Expected output:
 # NAME                         AGE
-# block-credit-cards           1m
-# block-ssn-numbers            1m
-# block-jailbreak-patterns     1m
-# ...
+# pii-protection               1m
+# jailbreak-prevention         1m
+# credential-protection        1m
+# rate-limiting                1m
+# prompt-elicitation           1m
 ```
 
-## Step 6: Configure Moltbot/Clawdbot
+## Step 7: Configure Moltbot/Clawdbot
 
-Update your Clawdbot configuration to use AgentGateway:
+Update your Clawdbot configuration to route through AgentGateway.
 
 ### Edit `~/.clawdbot/config.yaml`
 
@@ -135,18 +205,18 @@ Update your Clawdbot configuration to use AgentGateway:
 providers:
   # Route Anthropic through AgentGateway
   agentgateway-anthropic:
-    baseUrl: "http://172.16.10.162:30890/anthropic"
-    apiKey: "demo"  # Gateway handles real keys
+    baseUrl: "http://<GATEWAY_IP>:8080/anthropic"
+    apiKey: "passthrough"  # Gateway injects real key
+    
+  # Route OpenAI through AgentGateway
+  agentgateway-openai:
+    baseUrl: "http://<GATEWAY_IP>:8080/openai"
+    apiKey: "passthrough"
     
   # Route xAI through AgentGateway  
   agentgateway-xai:
-    baseUrl: "http://172.16.10.162:30890/xai"
-    apiKey: "demo"
-
-  # Route OpenAI through AgentGateway
-  agentgateway-openai:
-    baseUrl: "http://172.16.10.162:30890/openai"
-    apiKey: "demo"
+    baseUrl: "http://<GATEWAY_IP>:8080/xai"
+    apiKey: "passthrough"
 
 # Map models to gateway providers
 models:
@@ -160,6 +230,8 @@ models:
     provider: agentgateway-xai
   gpt-4o:
     provider: agentgateway-openai
+  gpt-4o-mini:
+    provider: agentgateway-openai
 ```
 
 ### Restart Clawdbot
@@ -168,70 +240,105 @@ models:
 clawdbot gateway restart
 ```
 
-## Step 7: Verify End-to-End
+## Step 8: Verify End-to-End
 
-Test that Moltbot requests flow through AgentGateway:
+### Test via curl
 
 ```bash
-# Send a test message through Clawdbot
-clawdbot chat "Hello, can you confirm you're working?"
-
-# Check AgentGateway logs for the request
-kubectl logs -n agentgateway-system -l app=agentgateway --tail=50
+# Test Anthropic routing
+curl -X POST "http://$GATEWAY_IP:8080/anthropic/v1/messages" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: passthrough" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{
+    "model": "claude-sonnet-4-20250514",
+    "max_tokens": 50,
+    "messages": [{"role": "user", "content": "Say hello!"}]
+  }'
 ```
 
-## Network Considerations
+### Test via Clawdbot
 
-### If Moltbot runs outside the cluster:
+```bash
+clawdbot chat "Hello! Can you confirm you're working through AgentGateway?"
+```
 
-1. **NodePort**: Use `<node-ip>:30890`
-2. **LoadBalancer**: Use the external IP
-3. **Ingress**: Configure with TLS termination
+### Check Logs
 
-### If Moltbot runs inside the cluster:
+```bash
+# View agentgateway proxy logs
+kubectl logs -n agentgateway-system -l app.kubernetes.io/name=agentgateway-proxy --tail=100
+```
 
-Use the internal service DNS:
+## Network Configurations
+
+### Moltbot Outside Cluster
+
+| Access Method | Configuration |
+|--------------|---------------|
+| **NodePort** | `http://<node-ip>:<nodeport>` |
+| **LoadBalancer** | `http://<external-ip>:8080` |
+| **Ingress** | `https://gateway.yourdomain.com` |
+
+### Moltbot Inside Cluster
+
+Use internal DNS:
 ```yaml
-baseUrl: "http://agentgateway.agentgateway-system.svc.cluster.local:8080/anthropic"
+baseUrl: "http://agentgateway-proxy.agentgateway-system.svc.cluster.local:8080/anthropic"
+```
+
+### TLS Configuration
+
+For production, configure TLS via Gateway API:
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agentgateway
+  namespace: agentgateway-system
+spec:
+  gatewayClassName: agentgateway
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: gateway-tls-cert
+```
+
+## Cleanup
+
+### Remove Everything
+
+```bash
+# Delete policies and backends
+kubectl delete -f manifests/
+
+# Uninstall helm charts
+helm uninstall agentgateway agentgateway-crds -n agentgateway-system
+
+# Delete namespace
+kubectl delete namespace agentgateway-system
+
+# Remove Gateway API CRDs (optional)
+kubectl delete -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
+```
+
+### Delete Kind Cluster (if used)
+
+```bash
+kind delete cluster --name agentgateway-demo
 ```
 
 ## Troubleshooting
 
-### Gateway not responding
-
-```bash
-# Check pods
-kubectl get pods -n agentgateway-system
-
-# Check logs
-kubectl logs -n agentgateway-system -l app=agentgateway
-
-# Check service endpoints
-kubectl get endpoints -n agentgateway-system
-```
-
-### Policies not working
-
-```bash
-# Verify policies are applied
-kubectl get agentgatewaypolicies -n agentgateway-system -o yaml
-
-# Check policy status
-kubectl describe agentgatewaypolicy <policy-name> -n agentgateway-system
-```
-
-### API errors from providers
-
-```bash
-# Check backend configuration
-kubectl get llmbackend -n agentgateway-system -o yaml
-
-# Verify secrets exist
-kubectl get secrets -n agentgateway-system
-```
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues and solutions.
 
 ## Next Steps
 
-- Review [POLICIES.md](POLICIES.md) for policy customization
-- Run the [demo script](../scripts/demo.sh) to see features in action
-- Check [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues
+- Review [POLICIES.md](POLICIES.md) for customizing security policies
+- Run `./scripts/demo.sh` to see all features in action
+- Check [agentgateway.dev](https://agentgateway.dev/docs/kubernetes/latest/) for advanced configuration

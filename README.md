@@ -60,25 +60,56 @@ This repository demonstrates how to secure [Moltbot](https://molt.bot) (an AI-po
 
 ### Prerequisites
 
-- Kubernetes cluster (tested on K8s 1.34+)
-- [AgentGateway](https://github.com/agentgateway/agentgateway) installed
-- Moltbot/Clawdbot instance
-- API keys for your LLM providers
+- Kubernetes cluster (K8s 1.28+)
+- `kubectl` configured for your cluster
+- `helm` v3.x installed
+- API keys for your LLM providers (Anthropic, OpenAI, xAI)
 
-### 1. Deploy AgentGateway
+> 💡 **Quick testing?** Use [Kind](https://kind.sigs.k8s.io/) to spin up a local cluster:
+> ```bash
+> kind create cluster --name agentgateway-demo
+> ```
+
+### 1. Install Gateway API CRDs
+
+AgentGateway uses the Kubernetes Gateway API. Install the CRDs first:
 
 ```bash
-# Add Solo.io Helm repo
-helm repo add solo-io https://storage.googleapis.com/solo-public-helm
-helm repo update
-
-# Install AgentGateway
-helm install agentgateway solo-io/agentgateway \
-  --namespace agentgateway-system \
-  --create-namespace
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
 ```
 
-### 2. Configure LLM Backends
+### 2. Install AgentGateway
+
+AgentGateway is distributed via OCI helm charts from the kgateway project:
+
+```bash
+# Install AgentGateway CRDs
+helm upgrade -i agentgateway-crds oci://ghcr.io/kgateway-dev/charts/agentgateway-crds \
+  --create-namespace \
+  --namespace agentgateway-system \
+  --version v2.2.0-main
+
+# Install AgentGateway control plane
+helm upgrade -i agentgateway oci://ghcr.io/kgateway-dev/charts/agentgateway \
+  --namespace agentgateway-system \
+  --version v2.2.0-main \
+  --set controller.extraEnv.KGW_ENABLE_GATEWAY_API_EXPERIMENTAL_FEATURES=true
+```
+
+Verify the installation:
+
+```bash
+# Check control plane is running
+kubectl get pods -n agentgateway-system
+
+# Expected output:
+# NAME                            READY   STATUS    RESTARTS   AGE
+# agentgateway-xxxxxxxxx-xxxxx    1/1     Running   0          1m
+```
+
+### 3. Configure LLM Provider Secrets
+
+Create secrets for your LLM API keys:
 
 ```bash
 # Create secrets for API keys
@@ -87,19 +118,42 @@ kubectl create secret generic llm-api-keys \
   --from-literal=anthropic-key=$ANTHROPIC_API_KEY \
   --from-literal=openai-key=$OPENAI_API_KEY \
   --from-literal=xai-key=$XAI_API_KEY
+```
 
-# Apply backend configurations
+### 4. Deploy Backend Configurations
+
+Apply the LLM backend configurations:
+
+```bash
 kubectl apply -f manifests/backends/
 ```
 
-### 3. Apply Security Policies
+### 5. Create the Gateway
+
+Deploy the Gateway resource to create the agentgateway proxy:
 
 ```bash
-# Apply all security policies
+kubectl apply -f manifests/gateway/
+```
+
+Wait for the gateway to be ready and get its external IP:
+
+```bash
+# Check gateway status
+kubectl get gateway -n agentgateway-system
+
+# Get the external IP (may take a minute)
+export GATEWAY_IP=$(kubectl get gateway agentgateway -n agentgateway-system -o jsonpath='{.status.addresses[0].value}')
+echo "Gateway IP: $GATEWAY_IP"
+```
+
+### 6. Apply Security Policies
+
+```bash
 kubectl apply -f manifests/policies/
 ```
 
-### 4. Configure Moltbot
+### 7. Configure Moltbot/Clawdbot
 
 Update your Moltbot/Clawdbot configuration to route through AgentGateway:
 
@@ -107,18 +161,48 @@ Update your Moltbot/Clawdbot configuration to route through AgentGateway:
 # ~/.clawdbot/config.yaml
 providers:
   agentgateway-anthropic:
-    baseUrl: "http://<gateway-ip>:30890/anthropic"
-    apiKey: "demo"  # Gateway handles real keys
+    baseUrl: "http://${GATEWAY_IP}:8080/anthropic"
+    apiKey: "passthrough"  # Gateway handles real keys
+    
+  agentgateway-openai:
+    baseUrl: "http://${GATEWAY_IP}:8080/openai"
+    apiKey: "passthrough"
     
   agentgateway-xai:
-    baseUrl: "http://<gateway-ip>:30890/xai"
-    apiKey: "demo"
+    baseUrl: "http://${GATEWAY_IP}:8080/xai"
+    apiKey: "passthrough"
 
 models:
   claude-sonnet-4-20250514:
     provider: agentgateway-anthropic
+  gpt-4o:
+    provider: agentgateway-openai
   grok-3-mini-beta:
     provider: agentgateway-xai
+```
+
+### 8. Test the Setup
+
+```bash
+# Test Anthropic routing
+curl -X POST "http://${GATEWAY_IP}:8080/anthropic/v1/messages" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: passthrough" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{
+    "model": "claude-sonnet-4-20250514",
+    "max_tokens": 100,
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+### Cleanup
+
+To uninstall AgentGateway:
+
+```bash
+helm uninstall agentgateway agentgateway-crds -n agentgateway-system
+kubectl delete namespace agentgateway-system
 ```
 
 ## 🛡️ Security Policies
@@ -293,9 +377,11 @@ The demo showcases:
 
 ## 📚 Resources
 
-- [AgentGateway Documentation](https://docs.solo.io/agentgateway)
+- [AgentGateway Documentation](https://agentgateway.dev/docs/kubernetes/latest/)
+- [AgentGateway GitHub](https://github.com/agentgateway/agentgateway)
+- [kgateway (Control Plane)](https://github.com/kgateway-dev/kgateway)
 - [Clawdbot Documentation](https://docs.clawd.bot)
-- [Solo.io](https://solo.io)
+- [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io/)
 
 ## 📄 License
 
